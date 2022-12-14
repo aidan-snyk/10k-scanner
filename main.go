@@ -47,7 +47,7 @@ func goDotEnvVariable(key string) string {
 	return os.Getenv(key)
 }
 
-//Calls sec api, returns ticker symbol and location of company
+//calls sec api, returns ticker symbol and location of company
 func mappingApiNameCaller(userNameInput string) string {
 
 	//set length of companySelection to variable companySelection
@@ -61,8 +61,17 @@ func mappingApiNameCaller(userNameInput string) string {
 		//get the SEC_API_TOKEN from .env file to use in api call
 		dotenv := goDotEnvVariable("SEC_API_TOKEN")
 
-		//call the sec api to get information about companySelection
-		res, err := http.Get("https://api.sec-api.io/mapping/name/" + userNameInput + "?token=" + dotenv)
+		//alternate api call using http.NewRequest
+		requestURL := fmt.Sprintf("https://api.sec-api.io/mapping/name/%s/?token=%s", userNameInput, dotenv)
+		req, err := http.NewRequest(http.MethodGet, requestURL, nil)
+		if err != nil {
+			fmt.Printf("client: could not create request: %s\n", err)
+			os.Exit(1)
+		}
+		res, err := http.DefaultClient.Do(req)
+
+		fmt.Printf("client: got response!\n")
+		fmt.Printf("client: status code: %d\n", res.StatusCode)
 
 		//check api response and present any errors
 		if err != nil {
