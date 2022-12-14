@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"os"
 
+	"code.dny.dev/ssrf"
 	"github.com/joho/godotenv"
 )
 
@@ -47,7 +49,24 @@ func goDotEnvVariable(key string) string {
 	return os.Getenv(key)
 }
 
-//Calls sec api, returns ticker symbol and location of company
+//sanitizes user input
+func sanitizer(userNameInput string) string {
+	s := ssrf.New()
+
+	dialer := &net.Dialer{
+		Control: s.Safe(),
+	}
+
+	transport := &http.Transport{
+		DialContext: dialer.DialContext,
+	}
+
+	client := &http.Client{
+		Transport: transport,
+	}
+}
+
+//calls sec api, returns ticker symbol and location of company
 func mappingApiNameCaller(userNameInput string) string {
 
 	//set length of companySelection to variable companySelection
@@ -61,8 +80,20 @@ func mappingApiNameCaller(userNameInput string) string {
 		//get the SEC_API_TOKEN from .env file to use in api call
 		dotenv := goDotEnvVariable("SEC_API_TOKEN")
 
+		//alternate api call using http.NewRequest
+		requestURL := fmt.Sprintf("https://api.sec-api.io/mapping/name/%d/?token=%d", sanitizer(userNameInput), dotenv)
+		req, err := http.NewRequest(http.MethodGet, requestURL, nil)
+		if err != nil {
+			fmt.Printf("client: could not create request: %s\n", err)
+			os.Exit(1)
+		}
+		res, err := http.DefaultClient.Do(req)
+
+		fmt.Printf("client: got response!\n")
+		fmt.Printf("client: status code: %d\n", res.StatusCode)
+
 		//call the sec api to get information about companySelection
-		res, err := http.Get("https://api.sec-api.io/mapping/name/" + userNameInput + "?token=" + dotenv)
+		//res, err := http.Get("https://api.sec-api.io/mapping/name/" + userNameInput + "?token=" + dotenv)
 
 		//check api response and present any errors
 		if err != nil {
@@ -130,6 +161,7 @@ func main() {
 	//set user selected company as string variable
 	var companySelection string
 	fmt.Scanln(&companySelection)
+	var sanitizedCompanySelection = sanitizer(companySelection)
 
-	mappingApiNameCaller(companySelection)
+	mappingApiNameCaller(sanitizedCompanySelection)
 }
