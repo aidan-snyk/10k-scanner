@@ -47,22 +47,59 @@ func goDotEnvVariable(key string) string {
 	return os.Getenv(key)
 }
 
-//calls sec api, returns ticker symbol and location of company
-func mappingApiNameCaller(userNameInput string) string {
-
+//check if userNameInput is between 4 and 25 characters
+func userNameInputLengthChecker(userNameInput string) bool {
 	//set length of companySelection to variable companySelection
 	var companySelectionLength = len(userNameInput)
 
-	//check if companySelection is between 4 and 25 characters
-	if companySelectionLength >= 4 && companySelectionLength <= 25 {
+	if companySelectionLength < 4 {
+		fmt.Print("Company name input must be 4 or more characters long.")
+	} else if companySelectionLength > 25 {
+		fmt.Print("Company name input must be 25 or fewer characters long.")
+	}
+	return true
+}
+
+/*
+//save this for later
+//checks length of sec api response
+func oneToManyHandler(responseLength int) {
+	if responseLength == 0 {
+		fmt.Print("\nNo company matches that description.\n")
+	} else if responseLength == 1 {
+		fmt.Print("\nNice! Found only one company matching that description:\n")
+		//need to make a new function that checks length of ticker
+		//tickerLengthChecker()
+	} else {
+		fmt.Printf("\nLooks like there are a few results, we'll need to narrow this down:\n")
+		fmt.Println("\nPlease select one of the following options:")
+		//tickerLengthChecker()
+	}
+	return
+}
+*/
+
+//check length of ticker
+func tickerLengthChecker(ticker string) bool {
+	//if ticker length is greater than 0 and not N/A
+	if len(ticker) > 0 && ticker != "N/A" {
+		return true
+	}
+	return true
+}
+
+//calls sec api, returns ticker symbol and location of company
+func mappingApiNameCaller(userNameInput string) string {
+
+	if userNameInputLengthChecker(userNameInput) {
 
 		fmt.Print("\nOkay, you want to know about ", userNameInput, "\n")
 
 		//get the SEC_API_TOKEN from .env file to use in api call
 		dotenv := goDotEnvVariable("SEC_API_TOKEN")
 
-		//alternate api call using http.NewRequest
-		requestURL := fmt.Sprintf("https://api.sec-api.io/mapping/name/%s/?token=%s", userNameInput, dotenv)
+		//api call
+		requestURL := fmt.Sprintf("https://api.sec-api.io/mapping/name/%s/?token=%s", userNameInput, dotenv) //userNameInput still the input
 		req, err := http.NewRequest(http.MethodGet, requestURL, nil)
 		if err != nil {
 			fmt.Printf("client: could not create request: %s\n", err)
@@ -70,12 +107,11 @@ func mappingApiNameCaller(userNameInput string) string {
 		}
 		res, err := http.DefaultClient.Do(req)
 
-		fmt.Printf("client: got response!\n")
-		fmt.Printf("client: status code: %d\n", res.StatusCode)
-
 		//check api response and present any errors
 		if err != nil {
 			log.Fatal(err)
+		} else if res.StatusCode != 200 {
+			fmt.Printf("Problem with the API request (status code: %d", res.StatusCode)
 		}
 		defer res.Body.Close()
 
@@ -94,36 +130,43 @@ func mappingApiNameCaller(userNameInput string) string {
 			fmt.Println(unmarshaledBody)
 		}
 
+		var responseLength = len(c)
+
+		///////////////////////////////////////////////////////////////////////////////////////////////////
 		//add logic to execute different behavior for 1 vs many results
 		//if number of results is 0, stop the loop
-		if len(c) == 0 {
-			fmt.Print("\nHmmmm not finding a company that matches that description.\n")
 
-			//if number of results is 1, present only that one
-		} else if len(c) == 1 {
+		if responseLength == 0 {
+			fmt.Print("\nNo company matches that description.\n")
+		} else if responseLength == 1 {
 			fmt.Print("\nNice! Found only one company matching that description:\n")
+			//no need to iterate through a single result here
+			//probably cut this down to a simpler process
 			for _, values := range c {
-				if len(values.Ticker) == 0 {
+				//var ticker = values.Ticker
+				if !tickerLengthChecker(values.Ticker) {
 					fmt.Printf("\nLooks like %#v is not a public company (yet). Sorry!", userNameInput)
 				} else {
-					fmt.Printf("\nTicker: %#v\nLocation: %#v\n", values.Ticker, values.Location)
+					fmt.Printf("\n\tFull company name: %#v\n\tTicker: %#v\n\tLocation: %#v\n", values.Name, values.Ticker, values.Location)
 				}
 			}
-
 			//if number of results is more than 1, break the loop
+			//focus here
 		} else {
 			fmt.Printf("\nLooks like there are %d results, we'll need to narrow this down:\n", len(c))
+			//fmt.Println("\nPlease select one of the following options:")
+			//var userSelection int
+			//fmt.Scanf("%g", &userSelection)
 			for _, values := range c {
-				if len(values.Ticker) == 0 || values.Ticker == "N/A" {
-					continue
+				if !tickerLengthChecker(values.Ticker) {
+
 				} else {
-					fmt.Printf("\nTicker: %#v\nLocation: %#v\n", values.Ticker, values.Location)
+					fmt.Printf("\n\tFull company name: %#v\n\tTicker: %#v\n\tLocation: %#v\n", values.Name, values.Ticker, values.Location)
 				}
 			}
 		}
-		//reject user input that is not between 4 and 25 characters (inclusive)
 	} else {
-		fmt.Println("Your entry must be between 4 and 25 characters long, please try again")
+		userNameInputLengthChecker(userNameInput)
 	}
 
 	//probably need to return the ticker and cik for future use...
