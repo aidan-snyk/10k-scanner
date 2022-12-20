@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -9,6 +10,7 @@ import (
 	"os"
 
 	"github.com/joho/godotenv"
+	"github.com/tidwall/gjson"
 )
 
 //define structure for sec api response
@@ -30,6 +32,60 @@ type Company struct {
 	Currency     string
 	Location     string
 	Id           string
+}
+
+type tenKayFiling struct {
+	Total struct {
+		Value    int    `json:"value"`
+		Relation string `json:"relation"`
+	} `json:"total"`
+	Query struct {
+		From int `json:"from"`
+		Size int `json:"size"`
+	} `json:"query"`
+	Filings []struct {
+		ID                  string `json:"id"`
+		AccessionNo         string `json:"accessionNo"`
+		Cik                 string `json:"cik"`
+		Ticker              string `json:"ticker"`
+		CompanyName         string `json:"companyName"`
+		CompanyNameLong     string `json:"companyNameLong"`
+		FormType            string `json:"formType"`
+		Description         string `json:"description"`
+		FiledAt             string `json:"filedAt"`
+		LinkToTxt           string `json:"linkToTxt"`
+		LinkToHTML          string `json:"linkToHtml"`
+		LinkToXbrl          string `json:"linkToXbrl"`
+		LinkToFilingDetails string `json:"linkToFilingDetails"`
+		Entities            []struct {
+			CompanyName          string `json:"companyName"`
+			Cik                  string `json:"cik"`
+			IrsNo                string `json:"irsNo"`
+			StateOfIncorporation string `json:"stateOfIncorporation"`
+			FiscalYearEnd        string `json:"fiscalYearEnd"`
+			Type                 string `json:"type"`
+			Act                  string `json:"act"`
+			FileNo               string `json:"fileNo"`
+			FilmNo               string `json:"filmNo"`
+			Sic                  string `json:"sic"`
+		} `json:"entities"`
+		DocumentFormatFiles []struct {
+			Sequence    string `json:"sequence"`
+			Description string `json:"description,omitempty"`
+			DocumentURL string `json:"documentUrl"`
+			Type        string `json:"type"`
+			Size        string `json:"size"`
+		} `json:"documentFormatFiles"`
+		DataFiles []struct {
+			Sequence    string `json:"sequence"`
+			Description string `json:"description"`
+			DocumentURL string `json:"documentUrl"`
+			Type        string `json:"type"`
+			Size        string `json:"size"`
+		} `json:"dataFiles"`
+		SeriesAndClassesContractsInformation []interface{} `json:"seriesAndClassesContractsInformation"`
+		PeriodOfReport                       string        `json:"periodOfReport"`
+	} `json:"filings"`
 }
 
 //get the SEC_API_TOKEN from .env file
@@ -121,15 +177,20 @@ func mappingApiNameCaller(userNameInput string) string {
 				//var ticker = values.Ticker
 				if tickerLengthChecker(values.Ticker) {
 					fmt.Print("\nNice! Found only one company matching that description:\n")
-					fmt.Printf("\n\tFull company name: %#v\n\tTicker: %#v\n\tLocation: %#v\n", values.Name, values.Ticker, values.Location)
+					fmt.Printf("\n\tFull company name: %#v (%#v)\n\tTicker: %#v\n\tLocation: %#v\n",
+						values.Name,
+						values.CIK,
+						values.Ticker,
+						values.Location)
+					return values.CIK
 				} else {
 					fmt.Printf("\nLooks like %#v is not a public company (yet). Sorry!", userNameInput)
+					return ""
 				}
 			}
-			//if number of results is more than 1, break the loop
-			//focus here
+			//if number of results is more than 1, make user select
 		} else {
-			fmt.Print("\nA few companies match that name. Select which option you want:\n")
+			fmt.Print("\nA few companies match that name:\n")
 			//set s as slice to hold tickers
 			var s []string
 
@@ -139,40 +200,90 @@ func mappingApiNameCaller(userNameInput string) string {
 				//skip if ticker doesn't meet public company conditions
 				if tickerLengthChecker(values.Ticker) {
 					//append company ticker symbol to s
-					s = append(s, values.Ticker)
+					s = append(s, values.CIK)
 
 					//present option number, name, ticker, and location to user
-					fmt.Printf("\nOption %#v\n\tFull company name: %#v\n\tTicker: %#v\n\tLocation: %#v\n",
+					fmt.Printf("\nOption %#v\n\tFull company name: %#v (CIK: %#v,Ticker: %#v)\n\tLocation: %#v\n",
 						len(s),
 						values.Name,
+						values.CIK,
 						values.Ticker,
 						values.Location)
 				}
 			}
-			//fmt.Printf("\nLooks like there are %d results, we'll need to narrow this down:\n", len(s))
-			//fmt.Print(s)
 			var i int
-			fmt.Println("Select which option you want to see")
+			fmt.Println("\nEnter the number option you'd like to see: ")
 			fmt.Scanln(&i)
-			fmt.Printf("\nThank you for selecting %#v", s[i-1])
+			return s[i-1]
 		}
 	} else {
 		fmt.Print("Company name input must be between 4 and 25 characters long.")
+		return ""
 	}
-
-	//probably need to return the ticker and cik for future use...
 	return ""
 }
+
+/*
+//gets link to filing text
+func getFilingTxt(tickerSelection string) string {
+	dotenv := goDotEnvVariable("SEC_API_TOKEN")
+
+
+}
+*/
 
 //Accepts user input about company,checks user input for length
 func main() {
 
 	//request user input about company
-	fmt.Println("Which company do you want to know about?")
+	fmt.Println("Which company do you want to know about (no spaces please)?")
 
 	//set user selected company as string variable
 	var companySelection string
 	fmt.Scanln(&companySelection)
 
-	mappingApiNameCaller(companySelection)
+	//testing adding the returned ticker to jsonData
+	tickerSelection := mappingApiNameCaller(companySelection)
+
+	//adding filing text caller
+	dotenv := goDotEnvVariable("SEC_API_TOKEN")
+	httpposturl := fmt.Sprintf("https://api.sec-api.io?token=%s", dotenv)
+
+	var jsonData = []byte(fmt.Sprintf(`{
+		"query": {
+			"query_string": {
+				"query": "cik:\"%s\" AND formType:\"10-K\""
+			}
+		},
+		"from": "0",
+		"size": "1",
+		"sort": [{ "filedAt": { "order": "desc" } }]
+	  }`, tickerSelection))
+
+	request, error := http.NewRequest("POST", httpposturl, bytes.NewBuffer((jsonData)))
+	if error != nil {
+		fmt.Printf("client: could not create request %s\n", error)
+		fmt.Println(string(jsonData))
+		os.Exit(1)
+	}
+	request.Header.Set("Content-Type", "application/json; chartset=UTF-8")
+
+	client := &http.Client{}
+
+	response, error := client.Do(request)
+	if error != nil {
+		panic(error)
+	}
+	defer response.Body.Close()
+
+	body, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		log.Fatal(err)
+	}
+	//return the link to the latest 10-K filing
+	result := gjson.Get(string(body), "filings.#.linkToTxt")
+
+	for _, filing := range result.Array() {
+		println(filing.String())
+	}
 }
